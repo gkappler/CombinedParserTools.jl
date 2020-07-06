@@ -1,6 +1,12 @@
+"""
+Experimental module providing several types to store annotated text [`Token`](ref)s,
+[`Line`](ref)s.
+"""
 module Tokens
 ############################################################
 ## Tokens
+## using BasePiracy
+## import BasePiracy: construct
 ## TODO: move intenring into parsing (creating from a db interning in tokens wastes mem)
 export AbstractToken, variable, value
 export Token, TokenValue, TokenTuple, TokenString
@@ -11,11 +17,14 @@ import CombinedParsers.Regexp: whitespace_maybe, whitespace_horizontal, word
 using ..CombinedParserTools
 import ..CombinedParserTools: footnote, quotes, delimiter, extension
 
+"""
+An abstract type for annotated textual tokens.
+"""
 abstract type AbstractToken end
-
-variable(x::AbstractToken) = error("implement variable $(typeof(x))")
-value(x::AbstractToken) = error("implement value $(typeof(x))")
-label(x::AbstractToken) = error("implement label $(typeof(x))")
+## TODO: rename variable to annotation
+variable(x::AbstractToken) = error("implement variable(x::$(typeof(x)))")
+value(x::AbstractToken) = error("implement value(x::$(typeof(x)))")
+label(x::AbstractToken) = error("implement label(x::$(typeof(x)))")
 
 
 variable_colors=Dict(
@@ -43,13 +52,20 @@ variable_colors=Dict(
     :meaning => :light_black
 )
 
-export value_empty
-value_empty(x::Pair) = value_empty(x.second) ## needed in tryparsenext
-value_empty(x::Vector) = isempty(x)
-value_empty(x) = false
-value_empty(::Union{Nothing,Missing}) = true
-value_empty(x::String) = x==""
-value_empty(x::AbstractToken) = value(x) === missing || value(x)==""
+# export value_empty
+# #value_empty(x::Pair) = value_empty(x.second) ## needed in tryparsenext
+# value_empty(x::Vector) = isempty(x)
+# value_empty(x) = false
+# value_empty(::Union{Nothing,Missing}) = true
+# value_empty(x::String) = x==""
+# value_empty(x::AbstractToken) = value(x) === missing || value(x)==""
+
+export isinformative, isvariable
+isinformative(i) = true
+isinformative(i::AbstractToken)  =
+    !(variable(i) in [ :delimiter, :indent, :list, :enum, :whitespace ])
+isvariable(i::AbstractToken)  =
+    !(variable(i) in [ :literal ]) && isinformative(i)
 
 function Base.show(io::IO, z::AbstractToken)
     color=get(variable_colors,
@@ -92,6 +108,10 @@ end
 ==(x::TokenPair,y::TokenPair) =
     x.key==y.key && x.value==y.value
 hash(x::TokenPair, h::UInt) = hash(x.key, hash(x.value,h))
+# BasePiracy.construct(::Type{TokenPair{K,V}}; key, value) where {K,V} =
+#     TokenPair{K,V}(_convert(K,key), _convert(V,value))
+# BasePiracy.construct(::Type{TokenPair{K,Vector{V}}}; key, value=V[]) where {K,V} =
+#     TokenPair{K,Vector{V}}(_convert(K,key), _convert(Vector{V},value))
 parentheses = Dict{Any,Any}(:paren=>("(", ")"),
                             :bracket=>("[", "]"),
                             :curly=>("{", "}"),
@@ -100,8 +120,8 @@ parentheses = Dict{Any,Any}(:paren=>("(", ")"),
                             :squote=> ("'","'"),
                             :german_quote => ("„","“"),
                             :htmlcomment=> ("<!--","-->"),
-                            :pre=> ("<pre>","</pre>"),
-                            :nowiki=> ("<nowiki>","</nowiki>"),
+                            ## :pre=> ("<pre>","</pre>"),
+                            ## :nowiki=> ("<nowiki>","</nowiki>"),
                             )
 import Base: with_output_color
 function Base.show(io::IO, z::TokenPair)
@@ -141,6 +161,7 @@ end
 Token(name::Symbol, value::Union{Missing, Nothing}) = Token(name, "")
 Token(name::Symbol) = Token(name, "")
 Token(x::Pair) = Token(x.first, x.second)
+Token(x::Pair{<:AbstractString,Symbol}) = Token(x.second, x.first)
 Token(x::Token) = x
 function Token(name::AbstractString, value)
     Token(Symbol(name), value)
@@ -165,6 +186,46 @@ end
 ws(x) = Token(:whitespace, x)
 
 
+
+
+export @annotate
+"""
+```jldoctest
+julia> digit = re"[0-9]";
+
+julia> @annotate [digit, :lletter => re"[a-z]"]
+|🗄... Either |> map(Token)
+├─ [0-9] CharIn |> map(#161) |> with_name(:digit)
+└─ [a-z] CharIn |> map(#161) |> with_name(:lletter)
+::Token
+
+```
+"""
+macro annotate(x)
+    if x.head == :vect
+        top = Expr(:vect)
+        for e_ in x.args
+            e = e_
+            while e isa Expr && e.head==:call && e.args[1]==Symbol("!")
+                e = e.args[2]
+            end
+            if e isa Symbol
+                push!(top.args,:($(QuoteNode(e)) => $e_))
+            elseif e.head==:call && e.args[1] == Symbol("=>")
+                push!(top.args,e)
+            else
+                dump(x)
+                error("@annotate supports only variables and `:annotation => parser`, not `$e`.")
+            end
+        end
+        esc(:(Either( tuple(( Token(parser(p)) for p in $top)...))))
+    else
+        dump(x)
+        :()
+    end
+end
+
+Token(p::NamedParser) = map(v->Token(p.name,v),p)
 
 export NamedString
 "parametrized Token struct -- dangerously slow!"
@@ -203,6 +264,16 @@ Base.getproperty(x::NamedString, p::Symbol) =
         error("no field $p in NamedString")
     end
 
+# BasePiracy._fieldnames(x::Type{<:NamedString}) = (:name,:value)
+# BasePiracy._fieldtypes(x::Type{<:NamedString}) = (Symbol,String)
+# BasePiracy._fieldtype(x::Type{<:NamedString}, p::Symbol) =
+#     if p == :name
+#         Symbol
+#     elseif p == :value
+#         String
+#     else
+#         error("no field $p in NamedString")
+#     end
 
 variable(x::NamedString{name}) where name = name
 value(x::NamedString) = getfield(x,1)
@@ -228,6 +299,12 @@ struct Node{A,T} <: AbstractToken
         new{A,T}(Symbol(name), _convert(Vector{A},attrs), _convert(Vector{T},value))
     end
 end
+
+# BasePiracy.construct(::Type{Node{A,T}}; name, attributes=Token[], children=T[]) where {A,T} = 
+#     Node{A,T}(name,
+#          _convert(Vector{Token},attributes),
+#          children)
+
 ==(a::Node, b::Node) = a.name==b.name && a.attributes==b.attributes && a.children==b.children
 hash(x::Node, h::UInt) = hash(x.name, hash(x.attributes, hash(x.children,h)))
 function Base.show(io::IO, x::Node) where {T}
@@ -251,6 +328,8 @@ function Base.show(io::IO, x::Node) where {T}
 end
 
 import InternedStrings: intern
+# import ..ParserAlchemy: ParserTypes, instance, map_at, Repeat, Sequence, Either, Optional, alternate, FlatMap, Repeat_until
+# import ..ParserAlchemy: result_type, regex_string
 
     
 export ReferringToken
@@ -275,167 +354,6 @@ const TokenString = Vector{AbstractToken}
 # TokenNest{Tv} = Tuple{Vararg{Union{TokenTuple{t},Token{t,s}} where {t, s <:Tv}, N} where N}
 ## TokenTuple(x::AbstractToken{Any, Tv}...) where {Tv} = x
 # TokenString(x::TokenTuple) = x
-
-
-
-export Line, Paragraph, Body
-
-export LinePrefix
-struct LinePrefix{I}
-    prefix::Vector{I}
-end
-==(x::LinePrefix,y::LinePrefix) =
-    x.prefix == y.prefix
-Base.hash(x::LinePrefix,h::UInt) =
-    hash(x.prefix,h)
-Base.lastindex(x::LinePrefix) =
-    lastindex(x.prefix)
-Base.length(x::LinePrefix) =
-    length(x.prefix)
-Base.isempty(x::LinePrefix) =
-    isempty(x.prefix)
-Base.iterate(x::LinePrefix, a...) =
-    iterate(x.prefix, a...)
-Base.getindex(x::LinePrefix, a...) =
-    getindex(x.prefix, a...)
-Base.convert(::Type{Vector{I}}, x::LinePrefix{J}) where {I,J} =
-    convert(Vector{I}, x.prefix)
-Base.convert(::Type{LinePrefix{J}}, x::Vector{I}) where {I,J} =
-    LinePrefix{J}(convert(Vector{J}, x))
-Base.pushfirst!(v::LinePrefix, x) where {J} =
-    pushfirst!(v.prefix,x)
-Base.push!(v::LinePrefix, x) where {J} =
-    push!(v.prefix,x)
-
-
-struct Line{I,T}
-    prefix::LinePrefix{I}
-    tokens::Vector{T}
-end
-
-Line(t::Vector{T}) where {T} =
-    Line{NamedString}(t)
-Line{I}(t::Vector{T}) where {I,T} =
-    Line(I[],t)
-function Line(prefix::Vector{I}, t::Vector{T}) where {I,T}
-    Line{I,T}(LinePrefix{I}(prefix), t)
-end
-function Line(prefix::Vector{I}, t::Vector{T}, newline::AbstractString) where {I,T}
-    Line( prefix,
-          vcat(t, Token(:whitespace, newline)))
-end
-function Line(prefix::NTuple{N,NamedString}, t::Vector{T}) where {N,T}
-    Line{NamedString,T}(
-        LinePrefix{NamedString}(NamedString[prefix...]),
-        t)
-end
-==(a::Line, b::Line) = a.prefix==b.prefix && a.tokens== b.tokens
-hash(x::Line, h::UInt) = hash(x.prefix, hash(x.tokens))
-import Base: convert
-Base.convert(::Type{Line{I,T}}, x::Line{J,S}) where {I,J,S,T} =
-    Line(convert(Vector{I}, x.prefix), convert(Vector{T}, x.tokens))
-Base.convert(::Type{Line{I,T}}, x::Vector) where {I,T} =
-    Line(I[], convert(Vector{T}, x))
-
-function Base.show(io::IO, i::Line{I,T}) where {I,T}
-    if !isempty(i.prefix) && variable(i.prefix[1]) == :headline
-        level = parse(Int, value(i.prefix[1]))
-        wikihead = repeat("=", level)
-        print(io, wikihead, " ")
-        tail = Token[]
-        for x in i.tokens
-            if !isequal(x, Token(:whitespace,"\n"))
-                print(io, x)
-            else
-                push!(tail,x)
-            end
-        end
-        print(io, wikihead)
-        for x in tail
-            print(io, x)
-        end 
-    else
-        for x in i.prefix
-            print(io, x.value === missing ? "" : x)
-        end
-        for x in i.tokens
-            print(io, x)
-        end
-    end
-end
-
-
-Paragraph{I,T} = Vector{Line{I,T}}
-Paragraph(x::Paragraph) = x
-## Base.show(io::IO, v::Type{Paragraph{T}}) where T = print(io, "Paragraph{$T}")
-Base.show(io::IO, v::AbstractVector{<:Line}) =
-    for x in v
-        print(io,x)
-    end
-
-Body{I,T} = Vector{Paragraph{I,T}}
-## Base.show(io::IO, v::Type{Body{T}}) where T = print(io, "Body{$T}")
-Base.show(io::IO, v::Body) =
-    for x in v
-        print(io,x)
-    end
-# Base.show(io::IO, m::MIME"text/markdown", x::Token) =
-#     if x.name in [ :literal, :delimiter, :whitespace ]
-#         print(io, x.value)
-#     else
-#         print(io,"""[$(x.value)]($(x.name) "$(x.name)")""")
-#     end
-# Base.show(io::IO, m::MIME"text/markdown", x::Line) = println(io,m,x.indent,x.tokens...)
-# Base.show(io::IO, m::MIME"text/markdown", x::Vector{Line}) = println(io,m,x...)
-# Base.show(io::IO, m::MIME"text/markdown", x::Vector{Vector{Line}}) = println(io,m,x...)
-
-export Template, LineContent
-TemplateArgument{I,T} = Pair{String,Vector{Line{I,T}}}
-struct Template{I,T} <: AbstractToken
-    template::String
-    arguments::Vector{TemplateArgument{I,T}}
-    Template(t,a::Vector{TemplateArgument{I,T}}) where {I,T} =
-        new{I,T}(t,[ k => v for (k,v) in a])
-    Template{I,T}(t,a::Vector) where {I,T} =
-        new{I,T}(t,[ k => convert(Vector{Line{I,T}},v) for (k,v) in a])
-    Template(t,a::Vector) =
-        new{Any,Any}(t,[ k => v for (k,v) in a])
-end
-Template(a::String) = Template(a,TemplateArgument{NamedString,LineContent}[])
-==(a::Template, b::Template) = a.template==b.template && a.arguments==b.arguments
-hash(x::Template, h::UInt) = hash(x.template, hash(x.arguments,h))
-
-function Base.show(io::IO, x::Template) where T 
-    print(io, "{{")
-    print(io, x.template)
-    for a in x.arguments
-        print(io, "|")
-        if a isa Pair
-            if !isempty(a.first)
-                print(io, a.first,"=",a.second)
-            else
-                print(io, a.second)
-            end
-        else
-            print(io, a)
-        end        
-    end
-    print(io, "}}")
-end
-
-LineContent = AbstractToken
-
-export isinformative, isvariable
-isinformative(i) = true
-isinformative(i::Token)  =
-    !(variable(i) in [ :delimiter, :indent, :list, :enum, :whitespace ])
-isinformative(i::Template)  = true
-isvariable(i::AbstractToken)  =
-    !(variable(i) in [ :literal ]) && isinformative(i)
-
-emptyLine(x::Vararg{T}) where T = Line{T,T}([ Token(:whitespace,"") ],
-                                   T[x...])
-
 
 export tokens
 tokens(x::Vector{<:Union{AbstractToken, AbstractString, Symbol}}) =
@@ -477,50 +395,67 @@ Base.convert(::Type{TokenString}, x::String) = tokenize(x)
 
 ## import ..Tokens: Token, Template, TokenPair, Line, LineContent, Paragraph
 
+import CombinedParsers: _iterate, MatchState, state_type
 export IteratorParser
-struct IteratorParser{T} <: CombinedParsers.AbstractToken{T}
+"""
+    IteratorParser{T}(label::String,match::Function,f::Function)
+
+An iterator parser `p` on an AbstractArray Sequence `str`.
+filters for `p.match(str[i])`, and return transformed `p.f(str[i],i).
+"""
+struct IteratorParser{T} <: CombinedParser{MatchState,T}
     label::String
     match::Function
-    f::Function    
+    f::Function
 end
 Base.show(io::IO, x::IteratorParser) = print(io, x.label)
+CombinedParsers.state_type(::Type{<:IteratorParser}) = MatchState()
+# IteratorParser{T}(label::String,match::Function,f::Function) =
+#     filter
 
-function CombinedParsers.tryparsenext(tok::IteratorParser{T},
-                                str, i, till,
-                                opts=TextParse.default_opts) where {P,T}
+function CombinedParsers._iterate(tok::IteratorParser,
+                  str, till,
+                  i,after,state::Nothing) 
     ##@show typeof(str[i])
     if i<=lastindex(str) && tok.match(str[i]) 
-        Nullable{T}(tok.f(str[i], i)), nextind(str,i)
+        nextind(str,i), MatchState()
     else
-        Nullable{T}(), i
+        nothing
     end
 end
 
-export is_type, is_heading, is_template, is_template_line, is_line
-is_template(template::String, transform=(v,i) -> v) =
+function Base.get(tok::IteratorParser,
+                  str, till,
+                  after,i,state::MatchState) 
+    tok.f(str[i], i)
+end
+
+export is_type, is_heading, is_template, is_template_line, is_line, LineContent
+LineContent = AbstractToken
+is_template(template::String, transform=(v) -> v) =
     IteratorParser{Line{NamedString,LineContent}}(
         template,
         x->x isa Template
         && x.name==template,
         transform
     )
-is_template_line(template::String, transform=(v,i) -> v, T = Line{NamedString,LineContent}) =
+is_template_line(template::String, transform=(v) -> v, T = Line{NamedString,LineContent}) =
     IteratorParser{T}(
         template,
         x->(x) isa Line && !isempty(x.tokens)
         && (x.tokens[1]) isa Template
         && x.tokens[1].template==template,
         transform)
-is_template_line(pred::Function, transform=(v,i) -> v, T = Line{NamedString,LineContent}) =
+is_template_line(pred::Function, transform=(v) -> v, T = Line{NamedString,LineContent}) =
     is_template_line(T, pred, transform)
-is_template_line(T::Type, pred::Function, transform=(v,i) -> v) =
+is_template_line(T::Type, pred::Function, transform=(v) -> v) =
     IteratorParser{T}(
         "template",
         x->(x) isa Line && !isempty(x.tokens)
         && (x.tokens[1]) isa Template
         && pred(x.tokens[1]),
         transform)
-is_heading(f=x->true, transform=(v,i) -> v, T = Line{NamedString,LineContent}) =
+is_heading(f=x->true, transform=(v) -> v, T = Line{NamedString,LineContent}) =
     IteratorParser{T}(
         "heading",
         x->x isa Line
@@ -528,94 +463,47 @@ is_heading(f=x->true, transform=(v,i) -> v, T = Line{NamedString,LineContent}) =
         && variable(x.prefix[end])==:headline
         && f(x.prefix[end]),
         transform)
-is_type(t::Type, transform=(v,i) -> v) =
+is_type(t::Type, transform=(v) -> v) =
     IteratorParser{t}(string(t), x->x isa t,
                       transform)
-is_line(transform=(v,i) -> v) = is_line(Line{NamedString,LineContent}, transform)
+is_line(transform=(v) -> v) = is_line(Line{NamedString,LineContent}, transform)
 
 """
 is not a headline
 """
-is_line(t::Type, transform=(v,i) -> v) =
-    IteratorParser{t}("Line", x->x isa Line
-                      && ( isempty(x.prefix) || variable(x.prefix[end])!=:headline),
-                      transform)
+is_line(t::Type, transform=(v) -> v) =
+    IteratorParser{t}(
+        "Line", x->x isa Line
+        && ( isempty(x.prefix) || variable(x.prefix[end])!=:headline),
+        transform)
 
 include("lines.jl")
 
+include("html.jl")
 
 
-export attribute_parser
-attribute_parser =
-    map_at(
-        (v,i) -> Token(lowercase(v[1]), intern(v[5])),
-        Token,
-        seq(
-            word, whitespace_maybe,"=", whitespace_maybe,
-            Either(
-                Sequence(
-                    2, "\"",
-                    regex_neg_lookahead("\"",re"(?:.|\\\")"),"\""),
-                re"[0-9]+%",
-                re"[-+]?[0-9]+",
-                word,
-                re"#[0-9A-Fa-f]{6}")
-        ))
-
-attributes = alternate(attribute_parser, whitespace_horizontal)
-
-function html(tags=word, inner=AnyChar(), attrs=attributes)
-    html(result_type(inner), tags, attrs) do until
-        Repeat_until(inner, until)
-    end
-end
-
-function html(inner::Function, T::Type, tags=word, attrs_parser=attributes)
-    A = eltype(result_type(attrs_parser))
-    function r(x,)
-        (tag,attrs) = x
-        Either(map_at(
-            #Node{A,T},
-            (v,i) -> Node(tag, attrs, T[]),
-            "/>"),
-               Sequence(
-                   # Node{A,T},
-                   ">",
-                   inner(Sequence("</",tag,">"))) do v
-               Node(tag, attrs, v[2])
-               end)
-    end
-    FlatMap{Node{A,T}}(
-        Sequence(
-            2,
-            "<",
-            Sequence(
-                !tags,
-                Optional(
-                    Sequence(
-                        2,
-                        whitespace_maybe,
-                        attrs_parser,
-                        whitespace_maybe)))),
-        r)
+export @tokenstring
+macro tokenstring(a...)
+    esc(quote
+        Repeat(
+            @annotate [ $(a)...,
+                        bracket_number,
+                        bracket_reference,
+                        default_tokens...,
+                        parentheses ])
+    end)
 end
 
 
-caps_word = Sequence(CharIn(isuppercase), Repeat1(CharIn(islowercase)))
-simple_tokens = [
-    ## instance(Token, parser(Regex(" "*regex_string(enum_label)*" ")), :number),
-    instance(Token, !!re"[0-9]+", :number),
-    instance(Token, !!caps_word, :name),
-    instance(Token, !!word, :literal),
-    instance(Token, !!footnote, :footnote),
-    instance(Token, !!quotes, :quote),
-    instance(Token, !!delimiter, :delimiter)
-    ##  , instance(Token, re"[\|\n]", :delimiter)
-    , instance(Token, !!re"[][{}()<>]", :paren)
-    , instance(Token, !!re"[-+*/%&!=]", :operator)
-    , instance(Token, !!re"[^][(){}\n \t\|]", :unknown)
-]
-
+import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
+@syntax default_tokens =
+    @annotate [ :number     => !!re"[0-9]+", 
+                !!capitalized, 
+                :literal    => !!word, 
+                :delimiter  => !!Repeat1(delimiter),
+                :footnote   => !!footnote, 
+                :quote      => !!quotes
+                ]
 
 export bracket_number, bracket_reference
 bracket_number = instance(
@@ -628,20 +516,6 @@ bracket_reference = instance(
     Token,
     !re"\[(?:(?:[0-9]+[[:alpha:]]*(?:,|–|-) *)*(?:[0-9]+[[:alpha:]]* *))\]",
     :reference)
-
-default_tokens = [
-    instance(Token, !re"[0-9]+", :number),
-    instance(Token, !word, :literal),
-    instance(Token, !quotes, :quote),
-    instance(Token, !delimiter, :delimiter)
-]
-
-export tokenstring
-tokenstring =
-    #tok(inline, 
-    Repeat(
-        Either(bracket_number, bracket_reference, default_tokens...,
-               instance(Token, !re"[][{}()<>]", :paren)))
 
 # append_element_f(vp, ep; kw...) =
 #     let T=result_type(vp)
