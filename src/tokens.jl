@@ -488,17 +488,8 @@ include("lines.jl")
 include("html.jl")
 
 
-export @tokenstring
-macro tokenstring(a...)
-    esc(quote
-        Repeat(
-            @annotate [ $(a)...,
-                        bracket_number,
-                        bracket_reference,
-                        default_tokens...,
-                        parentheses ])
-    end)
-end
+export tokenstring
+tokenstring = Repeat(default_tokens)
 
 
 import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
