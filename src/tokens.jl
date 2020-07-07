@@ -65,12 +65,12 @@ isinformative(i) = true
 isinformative(i::AbstractToken)  =
     !(variable(i) in [ :delimiter, :indent, :list, :enum, :whitespace ])
 isvariable(i::AbstractToken)  =
-    !(variable(i) in [ :literal ]) && isinformative(i)
+    !(variable(i) in [ :literal, :capitalized ]) && isinformative(i)
 
 function Base.show(io::IO, z::AbstractToken)
     color=get(variable_colors,
               Symbol(variable(z)), 36)
-    if variable(z)==:literal || variable(z)==:delimiter
+    if variable(z) in [ :literal, :capitalized, :delimiter ]
         value(z)!==missing && print(io,value(z))
     elseif !isinformative(z)
         printstyled(io, value(z); bold=true,
@@ -100,7 +100,74 @@ function Base.show(io::IO, z::AbstractToken)
 end
 
              
+
+
+
+export Token
+"""
+Represents an annotation of field `value::String` with field `name::Symbol`.
+"""
+struct Token <: AbstractToken
+    name::Symbol ## todo: CategoricalArrays.CategoricalValue
+    value::String
+    function Token(name::Symbol, value::T) where {T<:AbstractString}
+        new(name, value)
+    end
+end
+Token(name::Symbol, value::Union{Missing, Nothing}) = Token(name, "")
+Token(name::Symbol) = Token(name, "")
+Token(x::Pair) = Token(x.first, x.second)
+Token(x::Pair{<:AbstractString,Symbol}) = Token(x.second, x.first)
+Token(x::Token) = x
+"""
+    Token(p::NamedParser)
+
+Parser matching p.parser, transforming the result in a
+Token
+"""
+function Token(p::NamedParser)
+    @assert result_type(p)<:AbstractString
+    map(v->Token(p.name,v),p)
+end
+function Token(name::AbstractString, value)
+    Token(Symbol(name), value)
+end
+import Base: convert
+Base.convert(::Type{Token},e::Pair) =
+    Token(Symbol(e.first), e.second)
+
+export @l_str, @ws_str, @delim_str, @T_str
+"""
+    T_str(value, name)
+
+String macro to create a Token.
+```jldoctest
+julia> T"Jack"name
+Jack
+
+julia> T"123"number
+123
+```
+"""
+macro T_str(value, name)
+    Token(name, string(value))
+end
+macro l_str(x)
+    Token(:literal, x)
+end
+macro ws_str(x)
+    Token(:whitespace, x)
+end
+macro delim_str(x)
+    Token(:delimiter, x)
+end
+# ws(x) = Token(:whitespace, x)
+
+
 export TokenPair
+"""
+
+"""
 struct TokenPair{K,V} <: AbstractToken
     key::K
     value::V
@@ -150,43 +217,6 @@ end
 
 
 
-export Token
-struct Token <: AbstractToken
-    name::Symbol ## todo: CategoricalArrays.CategoricalValue
-    value::String
-    function Token(name::Symbol, value::T) where {T<:AbstractString}
-        new(name, value)
-    end
-end
-Token(name::Symbol, value::Union{Missing, Nothing}) = Token(name, "")
-Token(name::Symbol) = Token(name, "")
-Token(x::Pair) = Token(x.first, x.second)
-Token(x::Pair{<:AbstractString,Symbol}) = Token(x.second, x.first)
-Token(x::Token) = x
-function Token(name::AbstractString, value)
-    Token(Symbol(name), value)
-end
-import Base: convert
-Base.convert(::Type{Token},e::Pair) =
-    Token(Symbol(e.first), e.second)
-
-export @l_str, @ws_str, @delim_str, @T
-macro T(name, value)
-    Token(name, string(value))
-end
-macro l_str(x)
-    Token(:literal, x)
-end
-macro ws_str(x)
-    Token(:whitespace, x)
-end
-macro delim_str(x)
-    Token(:delimiter, x)
-end
-ws(x) = Token(:whitespace, x)
-
-
-
 
 export @annotate
 """
@@ -225,7 +255,6 @@ macro annotate(x)
     end
 end
 
-Token(p::NamedParser) = map(v->Token(p.name,v),p)
 
 export NamedString
 "parametrized Token struct -- dangerously slow!"
@@ -289,14 +318,14 @@ struct Node{A,T} <: AbstractToken
     function Node(name::Symbol, attrs, value)
         new{Token,eltype(value)}(name, attrs,value)
     end
-    function Node(name::AbstractString, attrs, value)
-        new{Token,eltype(value)}(Symbol(name), attrs,value)
+    function Node(name::AbstractString, attrs::Vector{A}, value::Vector{T}) where {A,T}
+        new{A,T}(Symbol(name), attrs,value)
     end
     function Node{T}(name::AbstractString, attrs, value) where T
         new{Token,T}(Symbol(name), attrs, _convert(Vector{T},value))
     end
     function Node{A,T}(name, attrs, value) where {A,T}
-        new{A,T}(Symbol(name), _convert(Vector{A},attrs), _convert(Vector{T},value))
+        new{A,T}(Symbol(name), convert(Vector{A},attrs), convert(Vector{T},value))
     end
 end
 
@@ -367,6 +396,11 @@ tokens(d::Dict) =
 tokens(x::Vector) =
     Iterators.flatten(tokens(y) for y in x)
 
+"""
+    tokens(n::NamedTuple{names,t})
+
+Recursively collect all tokens in a NamedTuple.
+"""
 function tokens(n::NamedTuple{names,t}) where {names,t}    
     val(field) = tokens(getproperty(n,field))
     R = Iterators.flatten( val(field)
@@ -377,6 +411,11 @@ function tokens(n::NamedTuple{names,t}) where {names,t}
     # Pair[ w => collect(v) for (w,v) in R ]    
 end
 
+"""
+    tokens(n::T)
+
+Recursively collect all tokens in a struct.
+"""
 function tokens(n::T) where {T}
     val(field) = tokens(getfield(n,field))
     R = Iterators.flatten( val(field)
@@ -393,89 +432,56 @@ end
 import Base: convert
 Base.convert(::Type{TokenString}, x::String) = tokenize(x)
 
-## import ..Tokens: Token, Template, TokenPair, Line, LineContent, Paragraph
-
 import CombinedParsers: _iterate, MatchState, state_type
+
 export IteratorParser
 """
     IteratorParser{T}(label::String,match::Function,f::Function)
 
 An iterator parser `p` on an AbstractArray Sequence `str`.
 filters for `p.match(str[i])`, and return transformed `p.f(str[i],i).
+
+TODO: deprecate for CharIn
 """
 struct IteratorParser{T} <: CombinedParser{MatchState,T}
-    label::String
     match::Function
-    f::Function
+    label::String
+    IteratorParser{T}(f::Function, l::String) where {T} =
+        new{T}(x->x isa T && f(x),l)
+    IteratorParser(f::Function, T::Type, l::String) =
+        new{T}(x->x isa T && f(x),l)
+    IteratorParser(T::Type, l::String) =
+        new{T}(x->x isa T,l)
+    IteratorParser(T::Type) =
+        new{T}(x->x isa T,"$T")
 end
 Base.show(io::IO, x::IteratorParser) = print(io, x.label)
-CombinedParsers.state_type(::Type{<:IteratorParser}) = MatchState()
+## CombinedParsers.state_type(::Type{<:IteratorParser}) = MatchState
 # IteratorParser{T}(label::String,match::Function,f::Function) =
 #     filter
 
+CombinedParsers._iterate(
+    tok::IteratorParser,
+    str, till,
+    i,after,state::MatchState) = nothing
 function CombinedParsers._iterate(tok::IteratorParser,
                   str, till,
                   i,after,state::Nothing) 
     ##@show typeof(str[i])
     if i<=lastindex(str) && tok.match(str[i]) 
-        nextind(str,i), MatchState()
+        Base.nextind(str,i), MatchState()
     else
         nothing
     end
 end
 
-function Base.get(tok::IteratorParser,
-                  str, till,
-                  after,i,state::MatchState) 
-    tok.f(str[i], i)
+function Base.get(tok::IteratorParser, str, till, after,i,state::MatchState) 
+    str[i]
 end
-
-export is_type, is_heading, is_template, is_template_line, is_line, LineContent
-LineContent = AbstractToken
-is_template(template::String, transform=(v) -> v) =
-    IteratorParser{Line{NamedString,LineContent}}(
-        template,
-        x->x isa Template
-        && x.name==template,
-        transform
-    )
-is_template_line(template::String, transform=(v) -> v, T = Line{NamedString,LineContent}) =
-    IteratorParser{T}(
-        template,
-        x->(x) isa Line && !isempty(x.tokens)
-        && (x.tokens[1]) isa Template
-        && x.tokens[1].template==template,
-        transform)
-is_template_line(pred::Function, transform=(v) -> v, T = Line{NamedString,LineContent}) =
-    is_template_line(T, pred, transform)
-is_template_line(T::Type, pred::Function, transform=(v) -> v) =
-    IteratorParser{T}(
-        "template",
-        x->(x) isa Line && !isempty(x.tokens)
-        && (x.tokens[1]) isa Template
-        && pred(x.tokens[1]),
-        transform)
-is_heading(f=x->true, transform=(v) -> v, T = Line{NamedString,LineContent}) =
-    IteratorParser{T}(
-        "heading",
-        x->x isa Line
-        && !isempty(x.prefix)
-        && variable(x.prefix[end])==:headline
-        && f(x.prefix[end]),
-        transform)
-is_type(t::Type, transform=(v) -> v) =
-    IteratorParser{t}(string(t), x->x isa t,
-                      transform)
-is_line(transform=(v) -> v) = is_line(Line{NamedString,LineContent}, transform)
-
-"""
-is not a headline
-"""
-is_line(t::Type, transform=(v) -> v) =
-    IteratorParser{t}(
-        "Line", x->x isa Line
-        && ( isempty(x.prefix) || variable(x.prefix[end])!=:headline),
-        transform)
+@inline Base.nextind(str,i::Int,parser::IteratorParser,x) =
+    Base.nextind(str,i)
+@inline Base.prevind(str,i::Int,parser::IteratorParser,x) = 
+    Base.prevind(str,i)
 
 include("lines.jl")
 

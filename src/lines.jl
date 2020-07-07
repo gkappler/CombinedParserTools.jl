@@ -114,3 +114,25 @@ Base.show(io::IO, v::Body) =
 # Base.show(io::IO, m::MIME"text/markdown", x::Vector{Line}) = println(io,m,x...)
 # Base.show(io::IO, m::MIME"text/markdown", x::Vector{Vector{Line}}) = println(io,m,x...)
 
+export is_type, is_heading, is_template, is_template_line, is_line, LineContent
+LineContent = AbstractToken
+
+is_heading(f=x->true, T = Line{NamedString,LineContent}) =
+    IteratorParser(T,"heading") do x
+        !isempty(x.prefix) &&
+            variable(x.prefix[end])==:headline &&
+            f(x.prefix[end])
+    end
+is_type(t::Type) =
+    IteratorParser(t, string(t))
+
+"""
+is not a headline
+"""
+is_line(t::Type{<:Line}) =
+    IteratorParser(t,"Line") do x
+        ( isempty(x.prefix) ||
+          variable(x.prefix[end])!=:headline)
+    end
+is_line() = is_line(Line{NamedString,LineContent})
+
