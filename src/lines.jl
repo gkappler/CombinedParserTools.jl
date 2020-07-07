@@ -1,9 +1,10 @@
-
-
-
 export Line, Paragraph, Body
-
+using AutoHashEquals
 export LinePrefix
+"""
+Wrapper class for a prefix vector.
+Wrapping used for interning.
+"""
 struct LinePrefix{I}
     prefix::Vector{I}
 end
@@ -31,14 +32,10 @@ Base.push!(v::LinePrefix, x) where {J} =
     push!(v.prefix,x)
 
 
-struct Line{I,T}
+@auto_hash_equals struct Line{I,T}
     prefix::LinePrefix{I}
     tokens::Vector{T}
 end
-
-# BasePiracy.construct(::Type{Line{I,T}};prefix=I[],tokens=T[]) where {I,T} =
-#     Line{I,T}(prefix,tokens)
-
 Line(t::Vector{T}) where {T} =
     Line{NamedString}(t)
 Line{I}(t::Vector{T}) where {I,T} =
@@ -55,8 +52,10 @@ function Line(prefix::NTuple{N,NamedString}, t::Vector{T}) where {N,T}
         LinePrefix{NamedString}(NamedString[prefix...]),
         t)
 end
-==(a::Line, b::Line) = a.prefix==b.prefix && a.tokens== b.tokens
-hash(x::Line, h::UInt) = hash(x.prefix, hash(x.tokens))
+emptyLine(x::Vararg{T}) where T =
+    Line{T,T}([ Token(:whitespace,"") ],
+              T[x...])
+
 import Base: convert
 Base.convert(::Type{Line{I,T}}, x::Line{J,S}) where {I,J,S,T} =
     Line(convert(Vector{I}, x.prefix), convert(Vector{T}, x.tokens))
@@ -114,48 +113,4 @@ Base.show(io::IO, v::Body) =
 # Base.show(io::IO, m::MIME"text/markdown", x::Line) = println(io,m,x.indent,x.tokens...)
 # Base.show(io::IO, m::MIME"text/markdown", x::Vector{Line}) = println(io,m,x...)
 # Base.show(io::IO, m::MIME"text/markdown", x::Vector{Vector{Line}}) = println(io,m,x...)
-
-emptyLine(x::Vararg{T}) where T = Line{T,T}([ Token(:whitespace,"") ],
-                                   T[x...])
-
-
-export print_org_tree
-print_org_tree(x) = print_org_tree(stdout,x)
-
-print_org_tree(io::IO, x) =
-    print(io,x)
-print_org_tree(io::IO, x::AbstractToken) =
-    x != Token(:whitespace, "\n") && print(io,x)
-function print_org_tree(io::IO, tree::Vector)
-    for b in tree
-        print_org_tree(io, b)
-    end
-end
-function print_org_tree(io::IO, b::Pair)
-    l, inner = b
-    print_org_tree(io::IO, NamedString(l), inner)
-end
-function print_org_tree(io::IO, b::NamedString{:name}, inner)
-    print(io, "#+name: ", value(l), "\n")
-    print_org_tree(io, inner)
-end
-function print_org_tree(io::IO, b::NamedString{:orgblock}, inner)
-    print(io, "#+begin_", value(l), "\n")
-    print_org_tree(io, inner)
-    print(io,  "#+end_", value(l), "\n")
-end
-function print_org_tree(io::IO, b::NamedString{:orgdrawer}, inner)
-    print(io, ":", value(l), ":\n")
-    print_org_tree(io, inner)
-    print(io, ":END:\n" )
-end
-# function print_org_tree(io::IO, b::NamedString{:inline}, inner)
-#     print(io, ":", value(l), ":\n")
-#     print_org_tree(io, inner)
-# end
-# function print_org_tree(io::IO, b::NamedString{:inline}, inner)
-#     print_org_tree(io, inner)
-# end
-
-
 

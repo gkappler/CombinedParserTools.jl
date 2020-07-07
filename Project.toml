@@ -4,6 +4,7 @@ authors = ["Gregor Kappler"]
 version = "0.1.0"
 
 [deps]
+AutoHashEquals = "15f4f7f2-30c1-5605-9d31-71845cf9641f"
 CombinedParsers = "5ae71ed2-6f8a-4ed1-b94f-e14e8158f19e"
 InternedStrings = "7d512f48-7fb1-5a58-b986-67e6dc259f01"
 Transducers = "28d57a85-8fef-5791-bfe6-a80928e7c999"

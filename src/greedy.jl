@@ -1,15 +1,15 @@
+import CombinedParsers: ParserTypes, tryparsenext
+using Nullables
+import Nullables: isnull, Nullable
 
-struct Greedy{Ps,A,F<:Function} <: CombinedParser{Any,Any}
+struct Greedy{Ps,A} <: CombinedParsers.AbstractToken{Any}
     pairs::Ps
     alt::A
-    transform::F
 end
     
 export greedy
-function greedy(tokens...;
-                alt = [],
-                transform=(v,i) -> v)
-    Greedy([tokens...], alt, transform)
+function greedy(tokens...; alt = [])
+    Greedy([tokens...], alt)
 end
 
 function CombinedParsers.tryparsenext(tokf::Greedy, str, i, till, opts=TextParse.default_opts)
@@ -55,7 +55,7 @@ function CombinedParsers.tryparsenext(tokf::Greedy, str, i, till, opts=TextParse
                 cr, ci = tryparsenext(tokf.alt[ai].second, str, i_, till)
             end
             if isnull(cr)
-                return Nullable{T}(convert(T, tokf.transform(R,i))), i_
+                return Nullable{T}(convert(T, R)), i_
             elseif ai == 0
                 push!(hist, get(cr))
                 i__ = ci
