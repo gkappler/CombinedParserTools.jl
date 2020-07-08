@@ -11,6 +11,7 @@ Nullables = "4d1e1d77-625e-5b40-9113-a560ec7a8ecd"
 Transducers = "28d57a85-8fef-5791-bfe6-a80928e7c999"
 
 [compat]
+Nullables = "1.0"
 InternedStrings = "0.7"
 Transducers = "0.4"
 AutoHashEquals = "0.2"
