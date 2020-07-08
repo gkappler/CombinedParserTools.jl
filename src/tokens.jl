@@ -488,10 +488,6 @@ include("lines.jl")
 include("html.jl")
 
 
-export tokenstring
-tokenstring = Repeat(default_tokens)
-
-
 import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
 @syntax default_tokens =
     @annotate [ :number     => !!re"[0-9]+", 
@@ -501,6 +497,9 @@ import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
                 :footnote   => !!footnote, 
                 :quote      => !!quotes
                 ]
+
+export tokenstring
+tokenstring = Repeat(default_tokens)
 
 export bracket_number, bracket_reference
 bracket_number = instance(
