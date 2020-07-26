@@ -282,8 +282,7 @@ Base.show(io::IO,x::NamedString{:field}) =
 Base.show(io::IO,x::NamedString{:whitespace}) =
     printstyled(io,x.value; color=:underline)
 
-
-Base.propertynames(x::NamedString) = _fieldnames(typeof(x))
+Base.propertynames(x::NamedString) = (:name,:value)
 Base.getproperty(x::NamedString, p::Symbol) =
     if p == :name
         variable(x)
