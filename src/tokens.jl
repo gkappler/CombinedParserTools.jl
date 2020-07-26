@@ -490,7 +490,6 @@ include("html.jl")
 import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
 @syntax default_tokens =
     @annotate [ :number     => !!re"[0-9]+", 
-                !!capitalized, 
                 :literal    => !!word, 
                 :delimiter  => !!Repeat1(delimiter),
                 :footnote   => !!footnote, 
