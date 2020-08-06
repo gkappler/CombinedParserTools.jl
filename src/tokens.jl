@@ -68,6 +68,7 @@ isvariable(i::AbstractToken)  =
     !(variable(i) in [ :literal, :capitalized ]) && isinformative(i)
 
 function Base.show(io::IO, z::AbstractToken)
+    if get(stdout,:color,false)
     color=get(variable_colors,
               Symbol(variable(z)), 36)
     if variable(z) in [ :literal, :capitalized, :delimiter ]
@@ -96,6 +97,9 @@ function Base.show(io::IO, z::AbstractToken)
                 bold=true, color=color
             )
         end
+    end
+    else
+        print(io,value(z))
     end
 end
 
@@ -488,40 +492,68 @@ include("html.jl")
 
 
 import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
-@syntax default_tokens =
-    @annotate [ :number     => !!re"[0-9]+", 
-                :literal    => !!word, 
-                :delimiter  => !!Repeat1(delimiter),
-                :footnote   => !!footnote, 
-                :quote      => !!quotes
+import CombinedParsers.Regexp: word_char
+default_token(mask=AnyChar()) =
+    @annotate [ :number     => !!Repeat1(re"[0-9]" .& mask), 
+                :literal    => !!Repeat1(word_char .& mask), 
+                :delimiter  => !!Repeat1(delimiter .& mask),
+                :footnote   => !!footnote .& mask, 
+                :quote      => !!(quotes .& mask)
                 ]
 
-export tokenstring
-tokenstring = Repeat(default_tokens)
+export tokenstring,default_token,quotes
+tokenstring(unknown=AnyChar()) = Repeat(default_token(unknown) | @annotate [ :unknown => !!unknown])
 
-export bracket_number, bracket_reference
-bracket_number = instance(
-    Token,
-    !re"\[(?:(?:[0-9]+[[:alpha:]]*(?:,|–|-) *)*(?:[0-9]+[[:alpha:]]* *)|\*)\]",
-    :number)
+export path_file
 
-## TODO: merge with bracket_number, tokenize parts
-bracket_reference = instance(
-    Token,
-    !re"\[(?:(?:[0-9]+[[:alpha:]]*(?:,|–|-) *)*(?:[0-9]+[[:alpha:]]* *))\]",
-    :reference)
+function path_file(path="/", blacklist=re"[^\v\h]")
+    path_parser = !!Repeat(blacklist .& CharNotIn(path))
+    Sequence(
+        Optional(path => Token(:root,"$path"), default=Token(:root,".$path")),
+        Repeat(instance(Token, !!(path_parser * path) , :folder)),
+        instance(Token, path_parser, :file),
+        instance(Token, Optional(!Sequence('.', path_parser)), :ext)) do v
+            [v[1],v[2]...,v[3:end]...]
+        end
+end
 
-# append_element_f(vp, ep; kw...) =
-#     let T=result_type(vp)
-#         Sequence(T, vp, ep;
-#                  transform = (v) -> convert(T, [ v[1]..., v[2] ]),
-#                  )
-#     end
+import CombinedParsers: Numeric
+export url
+"""
 
-# filename    = Either(
-#     append_element_f(tokenstring, instance(Token, parser(extension), :ext)),
-#     append_element_f(tokenstring, instance(Token, parser("/"), :ext)),
-#     append_element_f(tokenstring, instance(Token, parser(""), :ext))
-# )
+Parse generic URL syntax, see [Wikipedia](https://en.wikipedia.org/wiki/Uniform_Resource_Identifier#Generic_syntax).
+"""
+url(;
+    blacklist=re"[^\v\h]",
+    scheme = !re"[a-z]+",
+    match_parse = JoinSubstring(AnyChar()^()),
+    host_parse = join(match_parse,'.'),
+    path_parse = match_parse, #path_file(),
+    query_parse = match_parse
+    # ["http","https","ftp","ftps",
+    #  "mailto","irc",
+    #  "file","data"]
+    ) =
+        Sequence(:scheme => scheme,
+                 ':', Either(
+                     "//",
+                     PositiveLookbehind(caseless("mailto:"))),
+                 :authority => Sequence(
+                     :userinfo => (!re"\w+" * '@')[1]            | "",
+                     :host => !(blacklist .& CharNotIn("/:"))^(1,)         ∘ host_parse,
+                     ## TODO: parse IP here?
+                     :port => (':',Numeric(Int64))[2]  | 80
+                 ),
+                 :path => !Optional(
+                     '/' * (blacklist .& CharNotIn("?#"))^())              ∘ path_parse,
+                 :query => Optional(
+                     Sequence(2,'?',   ((blacklist .& CharNotIn("#"))^())   ∘ query_parse )),
+                 :fragment => ('#' * !blacklist^())[2]           | ""
+                 )
+
+Base.show(io::IO, x::NamedTuple{fieldnames(result_type(url()))}) =
+    print(io, x.scheme,"://",x.authority.userinfo,
+          x.authority.host,
+          x.authority.port)
 
 end
