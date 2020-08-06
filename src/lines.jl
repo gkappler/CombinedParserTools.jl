@@ -40,6 +40,8 @@ Line(t::Vector{T}) where {T} =
     Line{NamedString}(t)
 Line{I}(t::Vector{T}) where {I,T} =
     Line(I[],t)
+Line{I,T}(t::Vector{<:T}) where {I,T} =
+    Line(I[],convert(Vector{T}, t))
 function Line(prefix::Vector{I}, t::Vector{T}) where {I,T}
     Line{I,T}(LinePrefix{I}(prefix), t)
 end
