@@ -62,9 +62,10 @@ variable_colors=Dict(
 
 export isinformative, isvariable
 isinformative(i) = true
-isinformative(i::AbstractToken)  =
+isinformative(i::Token)  =
     !(variable(i) in [ :delimiter, :indent, :list, :enum, :whitespace ])
-isvariable(i::AbstractToken)  =
+isvariable(i) = false
+isvariable(i::Token)  =
     !(variable(i) in [ :literal, :capitalized ]) && isinformative(i)
 
 function Base.show(io::IO, z::AbstractToken)
