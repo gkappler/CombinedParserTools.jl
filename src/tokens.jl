@@ -526,7 +526,7 @@ Parse generic URL syntax, see [Wikipedia](https://en.wikipedia.org/wiki/Uniform_
 url(;
     blacklist=re"[^\v\h]",
     scheme = !re"[a-z]+",
-    match_parse = JoinSubstring(AnyChar()^()),
+    match_parse = JoinSubstring(Repeat(AnyChar())),
     host_parse = join(match_parse,'.'),
     path_parse = match_parse, #path_file(),
     query_parse = match_parse
@@ -540,15 +540,15 @@ url(;
                      PositiveLookbehind(caseless("mailto:"))),
                  :authority => Sequence(
                      :userinfo => (!re"\w+" * '@')[1]            | "",
-                     :host => !(blacklist .& CharNotIn("/:"))^(1,)         ∘ host_parse,
+                     :host => !(Repeat1(blacklist .& CharNotIn("/:")))         ∘ host_parse,
                      ## TODO: parse IP here?
                      :port => (':',Numeric(Int64))[2]  | 80
                  ),
                  :path => !Optional(
-                     '/' * (blacklist .& CharNotIn("?#"))^())              ∘ path_parse,
+                     '/' * Repeat(blacklist .& CharNotIn("?#")))              ∘ path_parse,
                  :query => Optional(
-                     Sequence(2,'?',   ((blacklist .& CharNotIn("#"))^())   ∘ query_parse )),
-                 :fragment => ('#' * !blacklist^())[2]           | ""
+                     Sequence(2,'?',   (Repeat(blacklist .& CharNotIn("#")))   ∘ query_parse )),
+                 :fragment => ('#' * !Repeat(blacklist))[2]           | ""
                  )
 
 Base.show(io::IO, x::NamedTuple{fieldnames(result_type(url()))}) =
