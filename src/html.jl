@@ -67,6 +67,7 @@ function html(inner::Function, T::Type, tags=word, attrs_parser=attributes)
                end)
     end
     FlatMap{Node{A,T}}(
+        r,
         Sequence(
             2,
             "<",
@@ -77,7 +78,6 @@ function html(inner::Function, T::Type, tags=word, attrs_parser=attributes)
                         2,
                         whitespace_maybe,
                         attrs_parser,
-                        whitespace_maybe)))),
-        r)
+                        whitespace_maybe)))))
 end
 
