@@ -62,11 +62,7 @@ variable_colors=Dict(
 
 export isinformative, isvariable
 isinformative(i) = true
-isinformative(i::Token)  =
-    !(variable(i) in [ :delimiter, :indent, :list, :enum, :whitespace ])
 isvariable(i) = false
-isvariable(i::Token)  =
-    !(variable(i) in [ :literal, :capitalized ]) && isinformative(i)
 
 function Base.show(io::IO, z::AbstractToken)
     if get(stdout,:color,false)
@@ -137,6 +133,13 @@ end
 function Token(name::AbstractString, value)
     Token(Symbol(name), value)
 end
+
+isinformative(i::Token)  =
+    !(variable(i) in [ :delimiter, :indent, :list, :enum, :whitespace ])
+isvariable(i::Token)  =
+    !(variable(i) in [ :literal, :capitalized ]) && isinformative(i)
+
+
 import Base: convert
 Base.convert(::Type{Token},e::Pair) =
     Token(Symbol(e.first), e.second)
