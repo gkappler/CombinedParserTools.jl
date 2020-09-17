@@ -5,8 +5,6 @@ Experimental module providing several types to store annotated text [`Token`](re
 module Tokens
 ############################################################
 ## Tokens
-## using BasePiracy
-## import BasePiracy: construct
 ## TODO: move intenring into parsing (creating from a db interning in tokens wastes mem)
 export AbstractToken, variable, value
 export Token, TokenValue, TokenTuple, TokenString
@@ -31,6 +29,9 @@ variable_colors=Dict(
     :ext => 36,
     :macro => 36,
     :number => 36,
+    :root => :dark_gray,
+    :folder => :blue,
+    :file => :yellow,
     :syllable => :yellow,
     :operator => :yellow,
     :name => :yellow,
@@ -89,10 +90,7 @@ function Base.show(io::IO, z::AbstractToken)
                 bold=true, color=color
             )
         else
-            printstyled(
-                io, value(z);
-                bold=true, color=color
-            )
+            printstyled(io, value(z); color=color)
         end
     end
     else
@@ -183,10 +181,6 @@ end
 ==(x::TokenPair,y::TokenPair) =
     x.key==y.key && x.value==y.value
 hash(x::TokenPair, h::UInt) = hash(x.key, hash(x.value,h))
-# BasePiracy.construct(::Type{TokenPair{K,V}}; key, value) where {K,V} =
-#     TokenPair{K,V}(_convert(K,key), _convert(V,value))
-# BasePiracy.construct(::Type{TokenPair{K,Vector{V}}}; key, value=V[]) where {K,V} =
-#     TokenPair{K,Vector{V}}(_convert(K,key), _convert(Vector{V},value))
 parentheses = Dict{Any,Any}(:paren=>("(", ")"),
                             :bracket=>("[", "]"),
                             :curly=>("{", "}"),
@@ -232,10 +226,10 @@ export @annotate
 julia> digit = re"[0-9]";
 
 julia> @annotate [digit, :lletter => re"[a-z]"]
-|🗄... Either |> map(Token)
+|🗄... Either |> map(NamedString)
 ├─ [0-9] CharIn |> map(#161) |> with_name(:digit)
 └─ [a-z] CharIn |> map(#161) |> with_name(:lletter)
-::Token
+::NamedString
 
 ```
 """
@@ -281,6 +275,9 @@ end
 Base.convert(::Type{NamedString}, x::Token) =
     NamedString(variable(x),value(x))
 
+Base.isless(x::NamedString, y::NamedString) =
+    isless(value(x), value(y))
+
 Base.show(io::IO,x::NamedString{:type}) =
     print(io,Token(:type,x.value),".")
 
@@ -300,17 +297,6 @@ Base.getproperty(x::NamedString, p::Symbol) =
         error("no field $p in NamedString")
     end
 
-# BasePiracy._fieldnames(x::Type{<:NamedString}) = (:name,:value)
-# BasePiracy._fieldtypes(x::Type{<:NamedString}) = (Symbol,String)
-# BasePiracy._fieldtype(x::Type{<:NamedString}, p::Symbol) =
-#     if p == :name
-#         Symbol
-#     elseif p == :value
-#         String
-#     else
-#         error("no field $p in NamedString")
-#     end
-
 variable(x::NamedString{name}) where name = name
 value(x::NamedString) = getfield(x,1)
 ==(x::NamedString,y::NamedString) =
@@ -323,7 +309,7 @@ struct Node{A,T} <: AbstractToken
     attributes::Vector{A}
     children::Vector{T}
     function Node(name::Symbol, attrs, value)
-        new{Token,eltype(value)}(name, attrs,value)
+        new{eltype(attrs),eltype(value)}(name, attrs,value)
     end
     function Node(name::AbstractString, attrs::Vector{A}, value::Vector{T}) where {A,T}
         new{A,T}(Symbol(name), attrs,value)
@@ -336,10 +322,6 @@ struct Node{A,T} <: AbstractToken
     end
 end
 
-# BasePiracy.construct(::Type{Node{A,T}}; name, attributes=Token[], children=T[]) where {A,T} = 
-#     Node{A,T}(name,
-#          _convert(Vector{Token},attributes),
-#          children)
 
 ==(a::Node, b::Node) = a.name==b.name && a.attributes==b.attributes && a.children==b.children
 hash(x::Node, h::UInt) = hash(x.name, hash(x.attributes, hash(x.children,h)))
@@ -381,8 +363,15 @@ variable(x::TokenPair) = x.key
 
 
 export TokenString
-const TokenString = Vector{AbstractToken}
+const TokenString = Vector{<:AbstractToken}
 
+function Base.string(x::TokenString)
+    b = IOBuffer()
+    for e in x
+        print(b,e)
+    end
+    String(take!(b))
+end
 # @deprecate TokenString(x...) tokenize(x...)
 
 # const TokenTuple = Tuple{Vararg{Token, N} where N}
@@ -497,7 +486,9 @@ include("html.jl")
 
 import CombinedParserTools: word, footnote, quotes, capitalized, delimiter
 import CombinedParsers.Regexp: word_char
-default_token(mask=AnyChar()) =
+
+export default_tokens
+default_tokens(mask=AnyChar()) =
     @annotate [ :number     => !!Repeat1(re"[0-9]" .& mask), 
                 :literal    => !!Repeat1(word_char .& mask), 
                 :delimiter  => !!Repeat1(delimiter .& mask),
