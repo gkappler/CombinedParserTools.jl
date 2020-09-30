@@ -60,4 +60,51 @@ end
 include("deprecated.jl")
 
 include("greedy.jl")
+
+
+
+import CombinedParsers: Numeric
+export url
+"""
+Parse generic URL syntax, see [Wikipedia](https://en.wikipedia.org/wiki/Uniform_Resource_Identifier#Generic_syntax).
+"""
+url(;
+    blacklist=re"[^\v\h]",
+    scheme = !!re"[a-z]+",
+    match_parse = !!Repeat(AnyChar()),
+    host_parse = join(match_parse,'.'),
+    path_parse = match_parse, #path_file(),
+    query_parse = match_parse
+    # ["http","https","ftp","ftps",
+    #  "mailto","irc",
+    #  "file","data"]
+    ) =
+        Sequence(:scheme => scheme,
+                 ':', Atomic(Either(
+                     "//",
+                     PositiveLookbehind(caseless("mailto:")))),
+                 :authority => Sequence(
+                     :userinfo => Optional(Sequence(1,!!re"\w+", '@')),
+                     :host => map(host_parse, !(Repeat1(blacklist .& CharNotIn("/:")))),
+                     ## TODO: parse IP here?
+                     :port => (':',Numeric(Int64))[2]  | 80
+                 ),
+                 :path => Optional(Sequence(
+                     2, '/', map(path_parse, !Repeat(blacklist .& CharNotIn("?#"))))),
+                 :query => Optional(
+                     Sequence(2,'?',   !!(Repeat(blacklist .& CharNotIn("#"))))), #   ∘ query_parse )),
+                 :fragment => Optional(Sequence(2, '#', !!Repeat(blacklist)))
+                 )
+
+_prefix(p,x...) = ( isempty(x) || x == tuple("") ) ? tuple() : (p,x...)
+_suffix(x,p) = x == "" ? "" : x*p
+Base.show(io::IO, x::NamedTuple{fieldnames(result_type(url()))}) =
+    print(io, x.scheme,"://",
+          _suffix(x.authority.userinfo,"@")...,
+          x.authority.host...,
+          x.authority.port == 80 ? "" : x.authority.port,
+          "/", x.path...,
+          _prefix("?", x.query, _prefix("#", x.fragment...)...)...
+          )
+
 end # module
