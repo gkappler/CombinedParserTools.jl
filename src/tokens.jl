@@ -491,7 +491,7 @@ export default_tokens
 default_tokens(mask=AnyChar()) =
     @annotate [ :number     => !!Repeat1(re"[0-9]" .& mask), 
                 :literal    => !!Repeat1(word_char .& mask), 
-                :delimiter  => !!Repeat1(delimiter .& mask),
+                :delimiter  => !!(delimiter .& mask),
                 :footnote   => !!footnote .& mask, 
                 :quote      => !!(quotes .& mask)
                 ]
