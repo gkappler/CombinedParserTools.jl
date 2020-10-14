@@ -84,11 +84,15 @@ function Base.show(io::IO, z::AbstractToken)
                 io, "{{{", value(z),"}}}";
                 bold=true, color=color
             )
-        elseif col === missing 
-            printstyled(
-                io, "[[",variable(z), "][", value(z),"]]";
-                bold=true, color=color
-            )
+        elseif col === missing
+            if get(io,:compact,false)
+                print(io,value(z))
+            else
+                printstyled(
+                    io, "[[",variable(z), "][", value(z),"]]";
+                    bold=true, color=color
+                )
+            end
         else
             printstyled(io, value(z); color=color)
         end
@@ -367,8 +371,9 @@ const TokenString = Vector{<:AbstractToken}
 
 function Base.string(x::TokenString)
     b = IOBuffer()
+    bc = IOContext(b, :compact => true)
     for e in x
-        print(b,e)
+        show(bc, e)
     end
     String(take!(b))
 end
