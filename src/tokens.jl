@@ -222,6 +222,26 @@ function Base.show(io::IO, z::TokenPair)
 end
 
 
+export open_close
+
+"""
+    open_close(name::Symbol, inner, open, close=open, stops::Tuple=tuple())
+
+Parser returning a [`TokenPair`](@ref)`(name,inner_parsing)`
+"""
+function open_close(name::Symbol,
+                    inner,
+                    open, close=open,
+                    stops::Tuple=tuple())
+    with_name(
+        name,
+        Sequence(open,
+                 Repeat_until(
+                     inner,
+                     sEither(close, stops...))) do v
+        TokenPair(name,v[2])
+        end)
+end
 
 
 export @annotate
