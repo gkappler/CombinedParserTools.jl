@@ -79,7 +79,7 @@ url(;
     #  "mailto","irc",
     #  "file","data"]
     ) =
-        Sequence(:scheme => scheme,
+        Sequence(:scheme => Atomic(scheme),
                  ':', Atomic(Either(
                      "//",
                      PositiveLookbehind(caseless("mailto:")))),
