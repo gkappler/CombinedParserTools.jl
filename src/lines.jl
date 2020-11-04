@@ -35,25 +35,23 @@ Base.push!(v::LinePrefix, x) where {J} =
 @auto_hash_equals struct Line{I,T}
     prefix::LinePrefix{I}
     tokens::Vector{T}
+    function Line{I,T}(prefix::Vector, t::Vector, newline::AbstractString)::Line{I,T} where {I,T}
+        new{I,T}( prefix,
+                   newline !="" ? vcat(t, Token(:whitespace, newline)) : t)::Line{I,T}
+    end
+    Line{I}(t::Vector{T}) where {I,T} =
+        new{I,T}(I[],t)
+    Line{I,T}(t::Vector{<:T}) where {I,T} =
+        new{I,T}(I[],convert(Vector{T}, t))
+    function Line{I,T}(prefix::Vector{I}, t::Vector{T}) where {I,T}
+        new{I,T}(LinePrefix{I}(prefix), t)
+    end
+    function Line(prefix::Vector{I}, t::Vector{T}) where {I,T}
+        new{I,T}(LinePrefix{I}(prefix), t)
+    end
 end
 Line(t::Vector{T}) where {T} =
     Line{NamedString}(t)
-Line{I}(t::Vector{T}) where {I,T} =
-    Line(I[],t)
-Line{I,T}(t::Vector{<:T}) where {I,T} =
-    Line(I[],convert(Vector{T}, t))
-function Line(prefix::Vector{I}, t::Vector{T}) where {I,T}
-    Line{I,T}(LinePrefix{I}(prefix), t)
-end
-function Line(prefix::Vector{I}, t::Vector{T}, newline::AbstractString) where {I,T}
-    Line( prefix,
-          vcat(t, Token(:whitespace, newline)))
-end
-function Line(prefix::NTuple{N,NamedString}, t::Vector{T}) where {N,T}
-    Line{NamedString,T}(
-        LinePrefix{NamedString}(NamedString[prefix...]),
-        t)
-end
 emptyLine(x::Vararg{T}) where T =
     Line{T,T}([ Token(:whitespace,"") ],
               T[x...])
