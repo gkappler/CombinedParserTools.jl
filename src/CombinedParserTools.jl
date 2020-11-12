@@ -93,7 +93,8 @@ url(;
                      2, '/', map(path_parse, !Repeat(blacklist .& CharNotIn("?#"))))),
                  :query => Optional(
                      Sequence(2,'?',   !!(Repeat(blacklist .& CharNotIn("#"))))), #   ∘ query_parse )),
-                 :fragment => Optional(Sequence(2, '#', !!Repeat(blacklist)))
+                 :fragment => Optional(Sequence(2, '#', !!Repeat(blacklist))),
+                 NegativeLookahead(CharIn(",!?.)]:")) ## not the best solution
                  )
 
 _prefix(p,x...) = ( isempty(x) || x == tuple("") ) ? tuple() : (p,x...)
