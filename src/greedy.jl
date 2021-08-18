@@ -1,4 +1,4 @@
-import CombinedParsers: ParserTypes, tryparsenext
+import CombinedParsers: tryparsenext
 using Nullables
 import Nullables: isnull, Nullable
 
@@ -15,7 +15,7 @@ end
 function CombinedParsers.tryparsenext(tokf::Greedy, str, i, till, opts=TextParse.default_opts)
     T = result_type(tokf)
     sections=tokf.pairs
-    RT(key, value) = if value[2] isa ParserTypes
+    RT(key, value) = if value[2] isa CombinedParser
         if Missing <: result_type(typeof(key))
             result_type(typeof(value[2]))
         else

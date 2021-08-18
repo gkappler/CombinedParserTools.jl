@@ -1,17 +1,70 @@
+
+
+export tokenstring,default_token,quotes
+tokenstring(unknown=AnyChar()) = Repeat(default_token(unknown) | @annotate [ :unknown => !!unknown])
+
 export Line, Paragraph, Body
-using AutoHashEquals
 export LinePrefix
+
+export TokenString
+const TokenString = Vector{<:AbstractToken}
+import Base: convert
+Base.convert(::Type{TokenString}, x::String) = tokenize(x)
+
+function Base.string(x::TokenString)
+    b = IOBuffer()
+    bc = IOContext(b, :compact => true)
+    for e in x
+        show(bc, e)
+    end
+    String(take!(b))
+end
+
+export tokens
+tokens(x::Vector{<:Union{AbstractToken, AbstractString, Symbol}}) =
+    Iterators.repeated(1  => x, 1)
+tokens(x::Union{Number,Symbol, AbstractString, AbstractToken}) =
+    Iterators.repeated(1 => Iterators.repeated(x, 1), 1)
+tokens(d::Dict) =
+    tuple() #Iterators.flatten( tokens(x.second) for x in d )
+tokens(x::Vector) =
+    Iterators.flatten(tokens(y) for y in x)
+
+"""
+    tokens(n::NamedTuple{names,t})
+
+Recursively collect all tokens in a NamedTuple.
+"""
+function tokens(n::NamedTuple{names,t}) where {names,t}    
+    val(field) = tokens(getproperty(n,field))
+    R = Iterators.flatten( val(field)
+                           for field in names
+                           )
+    R
+end
+
+"""
+    tokens(n::T)
+
+Recursively collect all tokens in a struct.
+"""
+function tokens(n::T) where {T}
+    val(field) = tokens(getfield(n,field))
+    R = Iterators.flatten( val(field)
+                           for field in fieldnames(T)
+                           )
+    R
+end
+
+
+
 """
 Wrapper class for a prefix vector.
 Wrapping used for interning.
 """
-struct LinePrefix{I}
+@auto_hash_equals struct LinePrefix{I}
     prefix::Vector{I}
 end
-==(x::LinePrefix,y::LinePrefix) =
-    x.prefix == y.prefix
-Base.hash(x::LinePrefix,h::UInt) =
-    hash(x.prefix,h)
 Base.lastindex(x::LinePrefix) =
     lastindex(x.prefix)
 Base.length(x::LinePrefix) =
@@ -43,7 +96,7 @@ Base.push!(v::LinePrefix, x) where {J} =
         new{I,T}(I[],t)
     Line{I,T}(t::Vector{<:T}) where {I,T} =
         new{I,T}(I[],convert(Vector{T}, t))
-    function Line{I,T}(prefix::Vector{I}, t::Vector{T}) where {I,T}
+    function Line{I,T}(prefix::Vector, t::Vector) where {I,T}
         new{I,T}(LinePrefix{I}(prefix), t)
     end
     function Line(prefix::Vector{I}, t::Vector{T}) where {I,T}
