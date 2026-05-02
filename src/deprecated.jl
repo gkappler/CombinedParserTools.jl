@@ -1,3 +1,25 @@
+############################################################
+## legacy constructors
+
+@deprecate opt(x...;kw...) Optional(x...;kw...)
+@deprecate alt(a...) Either(a...)
+# @deprecate seq(a...; kw...) Sequence(a...; kw...)
+
+export seq
+function seq(tokens::Vararg;
+             transform=nothing, kw...)
+    if transform isa Integer
+        Sequence(transform,tokens...)
+    elseif transform===nothing
+        Sequence(tokens...)
+    elseif transform isa Function
+        map(transform, Sequence(tokens...))
+    end
+end
+
+parenthesisP(open,close) =
+    Sequence(open, Repeat_until(AnyChar(),close,wrap=JoinSubstring))
+pad(x) = Sequence(2,whitespace_maybe, x, whitespace_maybe)
 
 export regex_neg_lookahead, regex_tempered_greedy
 regex_neg_lookahead(e,match=AnyChar()) =
@@ -213,3 +235,64 @@ function splitter(## R::Type,
     CustomParser(tpn, R)
 end
 
+include("greedy.jl")
+
+
+# import CombinedParsers: _iterate, MatchState, state_type
+export IteratorParser
+function IteratorParser(predicate::Function, T::Type, label::AbstractString)
+    ValueIn{T}(label, predicate)
+end
+
+# function IteratorParser{T}(predicate::Function, label::AbstractString) where {T}
+#     ValueIn{T}(label, predicate)
+# end
+
+# export IteratorParser
+# """
+#     IteratorParser{T}(label::String,match::Function,f::Function)
+
+# An iterator parser `p` on an AbstractArray Sequence `str`.
+# filters for `p.match(str[i])`, and return transformed `p.f(str[i],i).
+
+# TODO: deprecate for CharIn
+# """
+# struct IteratorParser{T} <: CombinedParser{MatchState,T}
+#     match::Function
+#     label::String
+#     IteratorParser{T}(f::Function, l::String) where {T} =
+#         new{T}(x->x isa T && f(x),l)
+#     IteratorParser(f::Function, T::Type, l::String) =
+#         new{T}(x->x isa T && f(x),l)
+#     IteratorParser(T::Type, l::String) =
+#         new{T}(x->x isa T,l)
+#     IteratorParser(T::Type) =
+#         new{T}(x->x isa T,"$T")
+# end
+# Base.show(io::IO, x::IteratorParser) = print(io, x.label)
+## CombinedParsers.state_type(::Type{<:IteratorParser}) = MatchState
+# IteratorParser{T}(label::String,match::Function,f::Function) =
+#     filter
+
+# CombinedParsers._iterate(
+#     tok::IteratorParser,
+#     str, till,
+#     i,after,state::MatchState) = nothing
+# function CombinedParsers._iterate(tok::IteratorParser,
+#                   str, till,
+#                   i,after,state::Nothing) 
+#     ##@show typeof(str[i])
+#     if i<=lastindex(str) && tok.match(str[i]) 
+#         Base.nextind(str,i), MatchState()
+#     else
+#         nothing
+#     end
+# end
+
+# function Base.get(tok::IteratorParser, str, till, after,i,state::MatchState) 
+#     str[i]
+# end
+# @inline Base.nextind(str,i::Int,parser::IteratorParser,x) =
+#     Base.nextind(str,i)
+# @inline Base.prevind(str,i::Int,parser::IteratorParser,x) = 
+#     Base.prevind(str,i)

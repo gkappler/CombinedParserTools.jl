@@ -9,15 +9,7 @@ parentheses = Dict{Any,Any}(:paren=>("(", ")"),
                             :squote=> ("'","'"),
                             :german_quote => ("„","“"),
                             :htmlcomment=> ("<!--","-->"),
-                            ## :pre=> ("<pre>","</pre>"),
-                            ## :nowiki=> ("<nowiki>","</nowiki>"),
                             )
-
-import Base: with_output_color
-@auto_hash_equals struct TokenPair{K,V} <: AbstractToken
-    key::K
-    value::V
-end
 
 """
     open_close(name::Symbol, inner, open, close=open, stops::Tuple=tuple())
@@ -28,14 +20,19 @@ function open_close(name::Symbol, inner, open, close=open, stops::CombinedParser
     with_name(
         name,
         Sequence(open,
-                 Repeat_until(
-                     inner,
-                     Either(close, stops; simplify=true))) do v
-        TokenPair(name,v[2])
-        end)
+                 Repeat_until(inner, Either(close,stops); min=1)
+                 ) do v
+                     TokenPair(name,v[2])
+                 end)
 end
 
 @deprecate open_close(name::Symbol, inner, open, close, stops::Tuple; kw...) open_close(name, inner, open, Either(close, stops...; simplify=true); kw...)
+
+import Base: with_output_color
+@auto_hash_equals struct TokenPair{K,V} <: AbstractToken
+    key::K
+    value::V
+end
 
 function Base.show(io::IO, z::TokenPair)
     inner_print(io::IO,x::AbstractVector) =

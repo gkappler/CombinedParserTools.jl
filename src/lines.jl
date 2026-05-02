@@ -1,7 +1,7 @@
 
 
 export tokenstring,default_token,quotes
-tokenstring(unknown=AnyChar()) = Repeat(default_token(unknown) | @annotate [ :unknown => !!unknown])
+tokenstring(unknown=AnyChar()) = Repeat(default_token(unknown) | !!unknown)
 
 export Line, Paragraph, Body
 export LinePrefix
@@ -19,12 +19,21 @@ function Base.string(x::TokenString)
     end
     String(take!(b))
 end
+# @deprecate TokenString(x...) tokenize(x...)
+
+# const TokenTuple = Tuple{Vararg{Token, N} where N}
+# TokenString{Tt, T} = Tuple{Vararg{Token{t,T} where {t <:Tt}, N} where N}
+# TokenNest{Tv} = Tuple{Vararg{Union{TokenTuple{t},Token{t,s}} where {t, s <:Tv}, N} where N}
+## TokenTuple(x::AbstractToken{Any, Tv}...) where {Tv} = x
+# TokenString(x::TokenTuple) = x
 
 export tokens
 tokens(x::Vector{<:Union{AbstractToken, AbstractString, Symbol}}) =
     Iterators.repeated(1  => x, 1)
 tokens(x::Union{Number,Symbol, AbstractString, AbstractToken}) =
     Iterators.repeated(1 => Iterators.repeated(x, 1), 1)
+## tokens(d::Dict{Symbol,<:AbstractString}) =
+##     [ 1 => [ Token(x.first, x.second) for x in d ] ]
 tokens(d::Dict) =
     tuple() #Iterators.flatten( tokens(x.second) for x in d )
 tokens(x::Vector) =
@@ -39,8 +48,10 @@ function tokens(n::NamedTuple{names,t}) where {names,t}
     val(field) = tokens(getproperty(n,field))
     R = Iterators.flatten( val(field)
                            for field in names
+                           # if !isempty(val(field))
                            )
     R
+    # Pair[ w => collect(v) for (w,v) in R ]    
 end
 
 """
@@ -52,8 +63,10 @@ function tokens(n::T) where {T}
     val(field) = tokens(getfield(n,field))
     R = Iterators.flatten( val(field)
                            for field in fieldnames(T)
+                           # if !isempty(val(field))
                            )
     R
+    # Pair[ w => collect(v) for (w,v) in R ]    
 end
 
 
@@ -75,15 +88,16 @@ Base.iterate(x::LinePrefix, a...) =
     iterate(x.prefix, a...)
 Base.getindex(x::LinePrefix, a...) =
     getindex(x.prefix, a...)
-Base.convert(::Type{Vector{I}}, x::LinePrefix{J}) where {I,J} =
+Base.convert(::Type{Vector{I}}, x::LinePrefix) where {I} =
     convert(Vector{I}, x.prefix)
 Base.convert(::Type{LinePrefix{J}}, x::Vector{I}) where {I,J} =
     LinePrefix{J}(convert(Vector{J}, x))
-Base.pushfirst!(v::LinePrefix, x) where {J} =
+Base.pushfirst!(v::LinePrefix, x)  =
     pushfirst!(v.prefix,x)
-Base.push!(v::LinePrefix, x) where {J} =
+Base.push!(v::LinePrefix, x)  =
     push!(v.prefix,x)
 
+export Line
 
 @auto_hash_equals struct Line{I,T}
     prefix::LinePrefix{I}
@@ -91,6 +105,9 @@ Base.push!(v::LinePrefix, x) where {J} =
     function Line{I,T}(prefix::Vector, t::Vector, newline::AbstractString)::Line{I,T} where {I,T}
         new{I,T}( prefix,
                    newline !="" ? vcat(t, Token(:whitespace, newline)) : t)::Line{I,T}
+    end
+    function Line{I,T}(prefix::Vector, t::Vector, newline::AtEnd)::Line{I,T} where {I,T}
+        new{I,T}( prefix, t)::Line{I,T}
     end
     Line{I}(t::Vector{T}) where {I,T} =
         new{I,T}(I[],t)
@@ -105,6 +122,12 @@ Base.push!(v::LinePrefix, x) where {J} =
 end
 Line(t::Vector{T}) where {T} =
     Line{NamedString}(t)
+# function Line(prefix::NTuple{N,NamedString}, t::Vector{T}) where {N,T}
+#     Line{NamedString,T}(
+#         LinePrefix{NamedString}(NamedString[prefix...]),
+#         t)
+# end
+
 emptyLine(x::Vararg{T}) where T =
     Line{T,T}([ Token(:whitespace,"") ],
               T[x...])
@@ -171,21 +194,24 @@ export is_type, is_heading, is_template, is_template_line, is_line, LineContent
 LineContent = AbstractToken
 
 is_heading(f=x->true, T = Line{NamedString,LineContent}) =
-    IteratorParser(T,"heading") do x
+    ValueIn{T}("heading") do x
         !isempty(x.prefix) &&
             variable(x.prefix[end])==:headline &&
             f(x.prefix[end])
     end
-is_type(t::Type) =
-    IteratorParser(t, string(t))
+
+is_type(T::Type) =
+    ValueIn{T}(string(t))
 
 """
 is not a headline
 """
-is_line(t::Type{<:Line}) =
-    IteratorParser(t,"Line") do x
+is_line(T::Type{<:Line}) =
+    ValueIn{T}("Line") do x
         ( isempty(x.prefix) ||
           variable(x.prefix[end])!=:headline)
     end
-is_line() = is_line(Line{NamedString,LineContent})
+
+is_line() =
+    is_line(Line{NamedString,LineContent})
 

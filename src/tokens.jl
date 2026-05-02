@@ -4,9 +4,6 @@ export isinformative, isvariable
 export NamedString
 export Token
 export @l_str, @ws_str, @delim_str, @T_str
-export @annotate
-
-export path_file
 
 """
 An abstract type for annotated textual tokens.
@@ -15,7 +12,7 @@ abstract type AbstractToken end
 ## TODO: rename variable to annotation
 variable(x::AbstractToken) = error("implement variable(x::$(typeof(x)))")
 value(x::AbstractToken) = error("implement value(x::$(typeof(x)))")
-label(x::AbstractToken) = error("implement label(x::$(typeof(x)))")
+label(x::AbstractToken) = variable(x) * " => " * value(x)
 isinformative(i) = true
 isvariable(i) = false
 isinformative(i::AbstractToken)  =
@@ -141,6 +138,9 @@ Token(name::Symbol) = Token(name, "")
 Token(x::Pair) = Token(x.first, x.second)
 Token(x::Pair{<:AbstractString,Symbol}) = Token(x.second, x.first)
 Token(x::Token) = x
+variable(x::Token) = x.name
+value(x::Token) = x.value
+
 
 """
     Token(p::NamedParser)
@@ -197,43 +197,6 @@ macro delim_str(x)
     Token(:delimiter, x)
 end
 # ws(x) = Token(:whitespace, x)
-
-
-"""
-```jldoctest
-julia> digit = re"[0-9]";
-
-julia> @annotate [digit, :lletter => re"[a-z]"]
-|🗄... Either |> map(NamedString)
-├─ [0-9] CharIn |> map(#161) |> with_name(:digit)
-└─ [a-z] CharIn |> map(#161) |> with_name(:lletter)
-::NamedString
-
-```
-"""
-macro annotate(x)
-    if x.head == :vect
-        top = Expr(:vect)
-        for e_ in x.args
-            e = e_
-            while e isa Expr && e.head==:call && e.args[1]==Symbol("!")
-                e = e.args[2]
-            end
-            if e isa Symbol
-                push!(top.args,:($(QuoteNode(e)) => $e_))
-            elseif e.head==:call && e.args[1] == Symbol("=>")
-                push!(top.args,e)
-            else
-                dump(x)
-                error("@annotate supports only variables and `:annotation => parser`, not `$e`.")
-            end
-        end
-        esc(:(Either( ( Token(parser(p)) for p in $top)...)))
-    else
-        dump(x)
-        :()
-    end
-end
 
 
 function path_file(path="/", blacklist=CharNotIn(path), sep=re"[ _\.-]")

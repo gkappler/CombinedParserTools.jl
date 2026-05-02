@@ -1,4 +1,3 @@
-export html
 
 
 export url
@@ -15,6 +14,9 @@ function url(;
              host_parse = !!join(token_parse,'.'),
              path_parse = !!token_parse, #path_file(),
              query_parse = !!token_parse
+             # ["http","https","ftp","ftps",
+             #  "mailto","irc",
+             #  "file","data"]
              )
         Sequence(:scheme => Atomic(scheme),
                  ':', Atomic(Either(
@@ -23,7 +25,8 @@ function url(;
                  :authority => Sequence(
                      :userinfo => Optional(Sequence(1,!!re"\w+", '@')),
                      :host => map(host_parse, !(Repeat1(blacklist .& CharNotIn("/:")))),
-                     :port => (':',Numeric(Int64))[2]  | 80
+                     ## TODO: parse IP here?
+                     :port => Optional((':',integer_base())[2]; default=80)
                  ),
                  :path => Optional(Sequence(
                      2, '/', map(path_parse, !Repeat(blacklist .& CharNotIn("?#"))))),
@@ -34,16 +37,16 @@ function url(;
                  )
 end
 
-function Base.show(io::IO, x::NamedTuple{fieldnames(result_type(url()))})
-    _prefix(p,x...) = ( isempty(x) || x == tuple("") ) ? tuple() : (p,x...)
-    _suffix(x,p) = x == "" ? "" : x*p
-    printstyled(io, x.scheme,"://", color=:yellow)
-    printstyled(io, _suffix(x.authority.userinfo,"@")..., color=:red)
-    printstyled(io, x.authority.host..., color=:underline)
-    printstyled(io, x.authority.port == 80 ? "" : x.authority.port)
-    printstyled(io, "/", x.path..., color=:bold)
-    printstyled(io, _prefix("?", x.query, _prefix("#", x.fragment...)...)..., color=:light_black)
-end
+# function Base.show(io::IO, x::NamedTuple{fieldnames(result_type(url()))})
+#     _prefix(p,x...) = ( isempty(x) || x == tuple("") ) ? tuple() : (p,x...)
+#     _suffix(x,p) = x == "" ? "" : x*p
+#     printstyled(io, x.scheme,"://", color=:yellow)
+#     printstyled(io, _suffix(x.authority.userinfo,"@")..., color=:red)
+#     printstyled(io, x.authority.host..., color=:underline)
+#     printstyled(io, x.authority.port == 80 ? "" : x.authority.port)
+#     printstyled(io, "/", x.path..., color=:bold)
+#     printstyled(io, _prefix("?", x.query, _prefix("#", x.fragment...)...)..., color=:light_black)
+# end
 
 @auto_hash_equals struct Node{A,T} <: AbstractToken
     name::Symbol
@@ -63,7 +66,7 @@ end
     end
 end
 
-function Base.show(io::IO, x::Node) where {T}
+function Base.show(io::IO, x::Node) 
     print(io,"<$(x.name)")
     for a in x.attributes
         if a isa Token
@@ -98,7 +101,7 @@ Key is a `word` parser, value is either a
 
 `result_type` is a [`Token`](@ref).
 """
-attribute_parser =
+attribute_parser() =
     with_name(
         :attribute,
         Sequence(
@@ -117,14 +120,14 @@ attribute_parser =
         end
     )
 
-attributes = join(attribute_parser, whitespace_horizontal)
-
+attributes() = join(Repeat(attribute_parser()), whitespace_horizontal)
+export html
 """
     html(tags=word, inner=AnyChar(), attrs=attributes)
 
 `result_type` is a [`Node`](@ref)`{eltype(result_type(attrs)),result_type(inner)}`.
 """
-function html(tags=word, inner=AnyChar(), attrs=attributes)
+function html(tags=word, inner=AnyChar(), attrs=attributes())
     html(result_type(inner), tags, attrs) do until
         Repeat_until(inner, until)
     end
@@ -136,7 +139,7 @@ end
 
 `result_type` is a [`Node`](@ref)`{eltype(result_type(attrs)),T}`.
 """
-function html(inner::Function, T::Type, tags=word, attrs_parser=attributes)
+function html(inner::Function, T::Type, tags=word, attrs_parser=attributes())
     A = eltype(result_type(attrs_parser))
     function r(x,)
         (tag,attrs) = x
